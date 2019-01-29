@@ -1,4 +1,4 @@
-﻿from enum import IntEnum, IntFlag
+from enum import IntEnum, IntFlag
 from dataclasses import dataclass
 import dataclasses
 from binascii import hexlify
@@ -6,7 +6,7 @@ import logging
 import logging.config
 
 logging.config.fileConfig('logging.conf')
-logger_cotypes = logging.getLogger(__name__)
+logger_zdataclass = logging.getLogger(__name__)
 
 # see example s_with_auto_field
 LENGTH_FIELD = 'length' 
@@ -18,93 +18,110 @@ UNION_FIELD = 'union'
 
 class base_int(int):
     W = None
-    ENDIAN = None    
+    ENDIAN = None
     
+    def to_bytes(self):
+        if self.W == None or self.ENDIAN == None:
+            raise Exception('object of type ({}) has no to_bytes()'.format(type(self)))
+        return int(self).to_bytes(self.W, self.ENDIAN)
+        
+    def __len__(self):
+        if self.W == None:
+            raise Exception('object of type ({}) has no length'.format(type(self)))
+        return self.W
 
-class int8(int): 
+    def __repr__(self):
+        if self.W == 1:
+            self.repr = '0x{:02x}({})'.format(self, self)
+        elif self.W == 2:
+            self.repr = '0x{:04x}({})'.format(self, self)
+        elif self.W == 3:
+            self.repr = '0x{:06x}({})'.format(self, self)
+        elif self.W == 4:
+            self.repr = '0x{:08x}({})'.format(self, self)
+        elif self.W == 8:
+            self.repr = '0x{:016x}({})'.format(self, self)
+        elif self.W == 16:
+            self.repr = '0x{:032x}({})'.format(self, self)
+        else:
+            self.repr = '{}'.format(self)
+        return self.repr
+
+class int8(base_int): 
     W = 1
     ENDIAN = 'little'
 
-    def to_bytes(self):
-        return int(self).to_bytes(W, ENDIAN)
-        
-    def __len__(self):
-        return W
+class int16(base_int):    
+    W = 2
+    ENDIAN = 'little'
 
-class int16(int):    
-    def __len__(self):
-        return 2
+class int24(base_int):    
+    W = 3
+    ENDIAN = 'little'    
 
-class int32(int):    
-    def __len__(self):
-        return 4
+class int32(base_int):    
+    W = 4
+    ENDIAN = 'little'
 
-class uint8(int):    
-    def __repr__(self):
-        self.repr = '0x{:02x}({})'.format(self, self)
-        return self.repr
+class uint8(base_int):    
+    W = 1
+    ENDIAN = 'little'
 
-    def __len__(self):
-        return 1
+class uint16(base_int):    
+    W = 2
+    ENDIAN = 'little'
 
-class uint16(int):    
-    def __repr__(self):
-        self.repr = '0x{:04x}({})'.format(self, self)
-        return self.repr
+class uint24(base_int):    
+    W = 3
+    ENDIAN = 'little'
 
-    def __len__(self):
-        return 2
+class uint32(base_int):    
+    W = 4
+    ENDIAN = 'little'
 
-class uint24(int):    
-    def __repr__(self):
-        self.repr = '0x{:06x}({})'.format(self, self)
-        return self.repr
+class uint64(base_int):    
+    W = 8
+    ENDIAN = 'little'
 
-    def __len__(self):
-        return 3
+class uint128(base_int):    
+    W = 16
+    ENDIAN = 'little'
 
-class uint32(int):    
-    def __repr__(self):
-        self.repr = '0x{:08x}({})'.format(self, self)
-        return self.repr
-
-    def __len__(self):
-        return 4  
-
-class uint16_be(uint16):
-    pass
+class uint16_be(base_int):
+    W = 2
+    ENDIAN = 'big'
     
-class uint32_be(uint32):
-    pass
+class uint32_be(base_int):
+    W = 4
+    ENDIAN = 'big'
+   
+class uint64_be(base_int):
+    W = 8
+    ENDIAN = 'big'
 
-class uint64(int):    
-    def __repr__(self):
-        self.repr = '0x{:16x}({})'.format(self, self)
-        return self.repr
-
-    def __len__(self):
-        return 8
-        
-class uint64_be(uint64):
-    pass
+class uint128_be(base_int):    
+    W = 16
+    ENDIAN = 'big'
     
-class IntEnum8(IntEnum):    
-    def __len__(self):
-        return 1
-    def is_member(self, value):
+class BaseIntEnum(IntEnum):
+    def is_valid(self, value):
         for x in self.__members__:
             if self.__members__[x] == value:
                 return True
         return False
 
-class IntEnum16(IntEnum):    
+class IntEnum8(BaseIntEnum):    
+    def __len__(self):
+        return 1
+    
+class IntEnum16(BaseIntEnum):    
     def __len__(self):
         return 2
-        
+
 class IntFlag8(IntFlag):    
     def __len__(self):
         return 1
-
+    
 class IntFlag16(IntFlag):    
     def __len__(self):
         return 2
@@ -114,18 +131,31 @@ class IntFlag32(IntFlag):
         return 4
 
 class int_array():
-    W = 4
-    ENDIAN = 'little'
+    W = None
+    ENDIAN = None
     def __init__(self, array=None):
         if type(array) == list:
             self.array = array
+        elif type(array) in [bytes, bytearray]:
+            self.array = list(array)
         else:
             self.array = list()
+
+    def to_bytes(self):
+        if self.W == None or self.ENDIAN == None:
+            raise Exception('object of type ({}) has no to_bytes()'.format(type(self)))
+        result = b''
+        for x in self.array:
+            result += int(x).to_bytes(self.W, self.ENDIAN)
+        return result
         
     def __len__(self): # including size field
         return len(self.array) * self.W
 
     def __repr__(self):
+        if self.W == None:
+            return repr(self)
+        
         i = 0
         n_items = len(self.array)
         self.repr = 'array[{}]:'.format(n_items)
@@ -136,196 +166,25 @@ class int_array():
                 self.repr += '{:02x} '.format(self.array[i])
             elif self.W == 2:
                 self.repr += '{:04x} '.format(self.array[i])    
-            else:    
+            elif self.W == 4:    
                 self.repr += '{:08x} '.format(self.array[i])
+            else:
+                self.repr += '{}'.format(self.array[i])
             i += 1
         self.repr += '\r\n'
         return self.repr
     
-
 class uint8_array(int_array):   
     W=1
+    ENDIAN = 'little'
 
 class uint16_array(int_array):   
     W=2
+    ENDIAN = 'little'
     
 class uint32_array(int_array):   
     W=4
-
-class type_len_data_t():
-    def __len__(self): # including size field
-        return self.real_size + self.offset
-
-    def unpack(self, data, n, mask=None): 
-        if len(data) <abs(n):
-            logger_cotypes.warn('int_array len(data)={} <{}'.format(len(data), abs(n)))
-            return self
-        if n <0:
-            self.size = int.from_bytes(data[0:abs(n)], self.ENDIAN)
-            self.offset = abs(n)
-        else:
-            self.size = n * self.W
-            self.offset = 0
-        if mask == None:
-            self.real_size = self.size
-        else:
-            self.real_size = self.size & mask
-        self.n_items = int(self.real_size / self.W)
-        self.array = list()
-        W = self.W 
-        if W*self.n_items + self.offset>len(data):
-            logger_cotypes.warn('int_array not enough data: n_items={}'.format(self.n_items))
-            return self 
-        for i in range(self.n_items):
-            idx = W*i + self.offset
-            self.array.append(int.from_bytes(data[idx: idx+W], self.ENDIAN))
-        return self
-
-# sdp data element
-# byte[0].bit[7:3] element type
-class data_element_type(IntEnum):
-    NULL = 0
-    UINT = 1
-    SINT = 2
-    UUID = 3
-    STRING = 4
-    BOOL = 5
-    DATA_ELEMENT_SEQ = 6
-    DATA_ELEMENT_ALT = 7
-    URL = 8
-
-# sdp data element
-# byte[0].bit[2:0] element size descriptor
-class data_element_size_t(IntEnum):
-    ONE = 0
-    TWO = 1
-    FOUR = 2
-    EIGHT = 3
-    SIXTEEN = 4
-    IN_NEXT_U8 = 5
-    IN_NEXT_U16 = 6
-    IN_NEXT_U32 = 7  
-    
-class sdp_data_element_t():
-    def __init__(self, element_type=None, element_size=None, element_data=None):
-        self.element_type = element_type
-        if element_size !=None:
-            self.set_element_size(element_size)
-        self.element_data = element_data
-
-    def set_element_size(self, element_size):
-        self.element_size = element_size
-        if element_size == 1:
-            self.element_size_desc = data_element_size_t.ONE
-        elif element_size == 2:
-            self.element_size_desc = data_element_size_t.TWO
-        elif element_size == 4:
-            self.element_size_desc = data_element_size_t.FOUR
-        elif element_size == 8:
-            self.element_size_desc = data_element_size_t.EIGHT
-        elif element_size == 16:
-            self.element_size_desc = data_element_size_t.SIXTEEN
-        elif element_size <256:
-            self.element_size_desc = data_element_size_t.IN_NEXT_U8
-        elif element_size <65536:
-            self.element_size_desc = data_element_size_t.IN_NEXT_U16
-        else:
-            self.element_size_desc = data_element_size_t.IN_NEXT_U32
-
-    def to_bytes(self):
-        if self.element_type == data_element_type.NULL:
-            return (self.element_type<<5).to_bytes(1, 'big')
-            
-        if self.element_type == None or self.element_size == None or self.element_data == None:
-            return b''
-            
-        data = (((self.element_type&0x1F)<<3) | (self.element_size_desc&0x07)).to_bytes(1, 'big')
-        if self.element_size_desc == data_element_size_t.IN_NEXT_U8:
-            data += self.element_size.to_bytes(1, 'big')
-        elif self.element_size_desc == data_element_size_t.IN_NEXT_U16:
-            data += self.element_size.to_bytes(2, 'big')  
-        elif self.element_size_desc == data_element_size_t.IN_NEXT_U32:
-            data += self.element_size.to_bytes(4, 'big')
-        if self.element_type in [data_element_type.UINT, data_element_type.SINT, data_element_type.BOOL]:
-            W = 1 <<self.element_size_desc
-            data += self.element_data.to_bytes(W, 'big')
-        elif self.element_type in [data_element_type.UUID, data_element_type.STRING]:
-            data += bytes(self.element_data)
-        elif self.element_type in [data_element_type.DATA_ELEMENT_SEQ, data_element_type.DATA_ELEMENT_ALT]:
-            for ele in self.element_data:
-                data += ele.to_bytes()
-        else:
-            logger_cotypes.error('Unknown element type {}'.format(self.element_type))
-        
-        return data
-
-    def unpack(self, data):
-        if len(data) == 0:
-            self.element_type = data_element_type.NULL
-            self.element_size_desc = 0
-            self.element_size = 0
-            self.element_data = b''
-            return
-        try:
-            self.element_type = data_element_type(data[0] >>3)
-        except:
-            self.element_type = data[0] >>3
-        self.element_size_desc = data_element_size_t(data[0] & 0x07)
-        if self.element_size_desc <= data_element_size_t.SIXTEEN:
-            self.element_size = 1 <<self.element_size_desc
-            offset = 1
-        elif self.element_size_desc == data_element_size_t.IN_NEXT_U8:
-            self.element_size = data[1]
-            offset = 2
-        elif self.element_size_desc == data_element_size_t.IN_NEXT_U16:
-            self.element_size = int.from_bytes(data[1:3], 'big')
-            offset = 3
-        elif self.element_size_desc == data_element_size_t.IN_NEXT_U32:
-            self.element_size = int.from_bytes(data[1:5], 'big')
-            offset = 5
-            
-        if self.element_type == data_element_type.NULL:
-            self.element_data = None
-        elif self.element_type == data_element_type.UINT:
-            self.element_data = int.from_bytes(data[offset:offset+self.element_size], 'big')
-        elif self.element_type == data_element_type.SINT:
-            self.element_data = int.from_bytes(data[offset:offset+self.element_size], 'big', signed=True)
-        elif self.element_type == data_element_type.UUID:
-            self.element_data = data[offset:offset+self.element_size]
-        elif self.element_type == data_element_type.DATA_ELEMENT_SEQ:
-            count = self.element_size
-            self.element_data = []
-            while count >0:
-                ele = sdp_data_element_t().unpack(data[offset:])
-                offset += len(ele)
-                count -= len(ele)
-                self.element_data.append(ele)
-        else:
-            self.element_data = data[offset:offset+self.element_size]
-        return self
-                
-    def __len__(self):
-        if self.element_size_desc <= data_element_size_t.SIXTEEN:
-            offset = 1
-        elif self.element_size_desc == data_element_size_t.IN_NEXT_U8:
-            offset = 2
-        elif self.element_size_desc == data_element_size_t.IN_NEXT_U16:
-            offset = 3
-        elif self.element_size_desc == data_element_size_t.IN_NEXT_U32:
-            offset = 5
-        return self.element_size + offset
-        
-    def __repr__(self):
-        format_str = 'data element {}: size={}'.format(repr(self.element_type), self.element_size)
-        if True: #type(self.element_data) != list:
-            format_str += ', data={}'.format(self.element_data)
-            self.repr = format_str
-            return format_str
-        format_str += ', data:\r\n'
-        for d in self.element_data:
-            format_str += '\r\n    {}'.format(d)
-        self.repr = format_str
-        return self.repr        
+    ENDIAN = 'little'
 
 @dataclass
 class basedataclass:
@@ -426,7 +285,7 @@ class basedataclass:
       try:
         m = len(t())
       except Exception as e:
-        logger_cotypes.error('Type {} doesnt hint its length.{}'.format(t,e))
+        logger_zdataclass.error('Type {} doesnt hint its length.{}'.format(t,e))
         return 0
       return m
 
@@ -468,7 +327,7 @@ class basedataclass:
     if (lf !=None) and (length !=None):
         return length  
              
-    #logger_cotypes.error('Unknown length for field {}'.format(x))
+    #logger_zdataclass.error('Unknown length for field {}'.format(x))
     return 0
 
   def __len__(self):
@@ -494,7 +353,7 @@ class basedataclass:
     t = getattr(x, 'type')
     L = self.get_field_len(x)     
     value = getattr(self, fieldname)
-    logger_cotypes.debug('pack field {}, L={}, value={}, type={}'.format(fieldname, L, value, t))
+    logger_zdataclass.debug('pack field {}, L={}, value={}, type={}'.format(fieldname, L, value, t))
     
     if t in [uint8, uint16, uint24, uint32, uint64, int8, int16, int32]:
       data += value.to_bytes(L, 'little')
@@ -508,22 +367,22 @@ class basedataclass:
     elif t == sdp_data_element_t:
         data += value.to_bytes()
     else:
-      logger_cotypes('dont known how to pack.')
+      logger_zdataclass('dont known how to pack.')
     return data
         
   def pack(self):
     data = b''
-    logger_cotypes.info('pack {}'.format(type(self)))
+    logger_zdataclass.info('pack {}'.format(type(self)))
     for x in dataclasses.fields(self): 
       data += self.pack_field(x)
     return data
   
   def unpack1(self, data):
     if len(data) < len(self):
-      logger_cotypes.error('data length {} less than expected {}'.format(len(data), len(self)))
+      logger_zdataclass.error('data length {} less than expected {}'.format(len(data), len(self)))
       return None
 
-    logger_cotypes.info('unpack {}'.format(type(self)))
+    logger_zdataclass.info('unpack {}'.format(type(self)))
     offset = 0  
     for x in dataclasses.fields(self): 
       default = getattr(x, 'default')
@@ -550,16 +409,16 @@ class basedataclass:
           value = sdp_data_element_t().unpack(data[offset:])
           L = len(value)
       else:
-        logger_cotypes.warn('type {} not parserable'.format(t))
+        logger_zdataclass.warn('type {} not parserable'.format(t))
         continue
-      logger_cotypes.debug('fieldname={}, L={}, value={}'.format(fieldname, L, value))
+      logger_zdataclass.debug('fieldname={}, L={}, value={}'.format(fieldname, L, value))
 
       if self.is_union_field(x) == False:
         offset += L
 
       # field with default value shall be same as unpacked value
       if default != None and default != value and type(default) !=dataclasses._MISSING_TYPE:
-        logger_cotypes.debug('unpack fail: value({}) !=default({})'.format(value, default))
+        logger_zdataclass.debug('unpack fail: value({}) !=default({})'.format(value, default))
         return None
 
       if type(value) != t:
@@ -568,7 +427,7 @@ class basedataclass:
 	      except:
 	          pass
       setattr(self, fieldname, value)  # set field value and type convert
-    logger_cotypes.info('unpack succeed {}'.format(type(self)))
+    logger_zdataclass.info('unpack succeed {}'.format(type(self)))
     return self
     
   def unpack(self, data):
