@@ -130,6 +130,10 @@ class uint4(base_int):
     W = 4/8
     ENDIAN = 'little'
 
+class uint12(base_int):
+    W = 12/8
+    ENDIAN = 'little'
+
 class int_array():
     W = None
     ENDIAN = None
@@ -387,7 +391,14 @@ class basedataclass:
         return data
 
     def pack_bitfields(self, bitfields):
-        return b''
+        offset = 0
+        result = 0
+        for x in bitfields:
+            n_bits = x[0]
+            value = x[1]
+            result |= (value <<offset)
+            offset += n_bits 
+        return result.to_bytes(offset//8, 'little')
 
     def debug(self, s):
         if logger_zdataclass != None:
@@ -412,7 +423,7 @@ class basedataclass:
                 fieldname = getattr(x, 'name')
                 value = getattr(self, fieldname)
                 self.bit_offset += int(fieldtype.W * 8)
-                self.bitfields.append((fieldtype.w, value))
+                self.bitfields.append((int(fieldtype.W * 8), value))
                 if self.bit_offset & 7 == 0:
                     data += self.pack_bitfields(self.bitfields)
                     self.bit_offset = 0
@@ -420,13 +431,26 @@ class basedataclass:
             else:
                 data += self.pack_field(x)
         return data
+
+    def unpack_bitfields(self, bitfields, data):
+        offset = 0
+        word = int.from_bytes(data[0:4], 'little')
+        for x in bitfields:
+            n_bits = x[0]
+            fieldname = x[1]
+            value = (word >>offset) & ((1<<n_bits) - 1)
+            offset += n_bits
+            setattr(self, fieldname, value)
+        return offset // 8
   
     def unpack1(self, data):
         if len(data) < len(self):
             raise Exception('data length {} less than expected {}'.format(len(data), len(self)))
 
         self.info('unpack {}'.format(type(self)))
-        offset = 0  
+        offset = 0
+        self.bit_offset = 0
+        self.bitfields = []
         for x in dataclasses.fields(self): 
             default = getattr(x, 'default')
             metadata = getattr(x, 'metadata')
@@ -434,7 +458,15 @@ class basedataclass:
             t = getattr(x, 'type')
             L = self.get_field_len(x, data)
 
-            if t == str:
+            if t in base_int.__subclasses__() and t.W !=int(t.W):
+                self.bit_offset += int(t.W * 8)
+                self.bitfields.append((int(t.W * 8), fieldname))
+                if self.bit_offset & 7 == 0:
+                    
+                    L = self.unpack_bitfields(self.bitfields, data[offset:] )
+                    self.bit_offset = 0
+                    self.bitfields = []
+            elif t == str:
                 value = str(data[offset:offset+L], 'utf-8')
             elif t in [bytearray, bytes]:
                 value = data[offset:offset+L]
@@ -445,13 +477,16 @@ class basedataclass:
                     print(e)
                     raise e
           
-            if self.is_union_field(x) == False:
+            if self.is_union_field(x) == False and int(L) == L:
                 offset += L
 
             # field with default value shall be same as unpacked value
             if default != None and default != value and type(default) !=dataclasses._MISSING_TYPE:
                 return None
 
+            if t in base_int.__subclasses__() and t.W !=int(t.W):
+                continue
+            
             # type convert
             if type(value) != t:
                 try:
@@ -512,6 +547,14 @@ class s_with_int_array(basedataclass):
     array8: uint8_array = dataclasses.field(default_factory=uint8_array, metadata={LENGTH_FIELD:2})
     array16: uint16_array = dataclasses.field(default_factory=uint16_array, metadata={LENGTH_FIELD:2*2})
     array32: uint32_array = dataclasses.field(default_factory=uint32_array, metadata={LENGTH_FIELD:1*4})
+
+@dataclass
+class s_with_bitfield(basedataclass):
+    head: uint8 = None
+    handle:  uint12 = None
+    pb_flag: uint2 = None
+    bc_flag: uint2 = None
+    tail: uint8 = None
    
 def test_length_field():
     d = s_with_length_field(data=b'\x01\x02')
@@ -558,9 +601,24 @@ def test_int_array():
     else:
         print('test_int_array fail\r\n')
 
+def test_bitfield():
+    d = s_with_bitfield(head=0, pb_flag=1, bc_flag=2, handle=0x20, tail=255)
+    print('{}, len={}'.format(d, len(d)))
+    data = d.pack()
+    print(hexlify(data))
+
+    d2 = s_with_bitfield().unpack(data)
+    print('{}, len={}'.format(d2, len(d2)))
+
+    if d2 == d:
+        print('test_bitfield pass\r\n')
+    else:
+        print('test_bitfield fail\r\n')
+
 if __name__ == '__main__':
-    test_length_field()
+    '''test_length_field()
     test_union_field()   
-    test_int_array()
+    test_int_array()'''
+    test_bitfield()
     
     
